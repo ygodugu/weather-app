@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Box, Container, Grid, Link, SvgIcon, Typography } from '@mui/material';
 import Search from './components/Search/Search';
 import WeeklyForecast from './components/WeeklyForecast/WeeklyForecast';
@@ -21,44 +21,76 @@ function App() {
   const [todayForecast, setTodayForecast] = useState([]);
   const [weekForecast, setWeekForecast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [weatherData, setWeatherData] = useState(null);
-
+  const [error, setError] = useState(null);
 
   const searchChangeHandler = async (enteredData) => {
     const [latitude, longitude] = enteredData.value.split(' ');
 
     setIsLoading(true);
+    setError(null);
 
     const currentDate = transformDateFormat();
     const date = new Date();
     let dt_now = Math.floor(date.getTime() / 1000);
 
     try {
-      const [todayWeatherResponse, weekForecastResponse] =
-        await fetchWeatherData(latitude, longitude);
-      const all_today_forecasts_list = getTodayForecastWeather(
-        weekForecastResponse,
-        currentDate,
-        dt_now
-      );
-
-      const all_week_forecasts_list = getWeekForecastWeather(
-        weekForecastResponse,
-        ALL_DESCRIPTIONS
-      );
+      const [todayWeatherResponse, weekForecastResponse] = await fetchWeatherData(latitude, longitude);
+      const all_today_forecasts_list = getTodayForecastWeather(weekForecastResponse, currentDate, dt_now);
+      const all_week_forecasts_list = getWeekForecastWeather(weekForecastResponse, ALL_DESCRIPTIONS);
 
       setTodayForecast([...all_today_forecasts_list]);
       setTodayWeather({ city: enteredData.label, ...todayWeatherResponse });
-      setWeekForecast({
-        city: enteredData.label,
-        list: all_week_forecasts_list,
-      });
+      setWeekForecast({ city: enteredData.label, list: all_week_forecasts_list });
     } catch (error) {
-      setError(true);
+      console.error('Error fetching weather data:', error);
+      setError("Failed to fetch weather data");
     }
 
     setIsLoading(false);
+  };
+
+  const fetchWeatherByLocation = () => {
+    setIsLoading(true);
+    setError(null);
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        const currentDate = transformDateFormat();
+        const date = new Date();
+        let dt_now = Math.floor(date.getTime() / 1000);
+
+        try {
+          const [todayWeatherResponse, weekForecastResponse] = await fetchWeatherData(latitude, longitude);
+          const all_today_forecasts_list = getTodayForecastWeather(weekForecastResponse, currentDate, dt_now);
+          const all_week_forecasts_list = getWeekForecastWeather(weekForecastResponse, ALL_DESCRIPTIONS);
+
+          setTodayForecast([...all_today_forecasts_list]);
+          setTodayWeather({ city: 'Current Location', ...todayWeatherResponse });
+          setWeekForecast({ city: 'Current Location', list: all_week_forecasts_list });
+        } catch (error) {
+          console.error('Error fetching weather data:', error);
+          setError("Failed to fetch weather data");
+        }
+
+        setIsLoading(false);
+      }, (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setError("Permission to access location was denied. Please allow location access in your browser settings.");
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setError("Location information is unavailable.");
+        } else if (error.code === error.TIMEOUT) {
+          setError("The request to get user location timed out.");
+        } else {
+          setError("An unknown error occurred while fetching location.");
+        }
+        setIsLoading(false);
+      });
+    } else {
+      console.error('Geolocation is not supported by this browser');
+      setError("Geolocation is not supported by this browser");
+      setIsLoading(false);
+    }
   };
 
   let appContent = (
@@ -91,19 +123,16 @@ function App() {
           lineHeight: '22px',
         }}
       >
-        Explore current weather data and 6-day forecast of more than 200,000
-        cities!
+        Explore current weather data and 6-day forecast of more than 200,000 cities!
       </Typography>
     </Box>
   );
 
-  if (todayWeather && todayForecast && weekForecast) {
+  if (todayWeather && todayForecast.length && weekForecast) {
     appContent = (
       <React.Fragment>
-        <Grid item xs={12} md={todayWeather ? 6 : 12}>
-          <Grid item xs={12}>
-            <TodayWeather data={todayWeather} forecastList={todayForecast} />
-          </Grid>
+        <Grid item xs={12} md={6}>
+          <TodayWeather data={todayWeather} forecastList={todayForecast} />
         </Grid>
         <Grid item xs={12} md={6}>
           <WeeklyForecast data={weekForecast} />
@@ -117,7 +146,7 @@ function App() {
       <ErrorBox
         margin="3rem auto"
         flex="inherit"
-        errorMessage="Something went wrong"
+        errorMessage={error}
       />
     );
   }
@@ -151,30 +180,6 @@ function App() {
     );
   }
 
-  const fetchWeatherByLocation = async () => {
-    setIsLoading(true);
-    try {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          const { latitude, longitude } = position.coords;
-          console.log("Latitude:", latitude, "Longitude:", longitude); // Logging coordinates
-          const [weather, forecast] = await fetchWeatherData(latitude, longitude);
-          setWeatherData({ weather, forecast });
-          setIsLoading(false);
-        });
-      } else {
-        console.error('Geolocation is not supported by this browser.');
-        setError('Failed to fetch weather data');
-        setIsLoading(false);
-      }
-    } catch (error) {
-      console.error('Error fetching weather data:', error);
-      setError('Failed to fetch weather data');
-      setIsLoading(false);
-    }
-  };
-
-
   return (
     <Container
       sx={{
@@ -187,10 +192,6 @@ function App() {
         borderRadius: {
           xs: 'none',
           sm: '0 0 1rem 1rem',
-        },
-        boxShadow: {
-          xs: 'none',
-          sm: 'rgba(0,0,0, 0.5) 0px 10px 15px -3px, rgba(0,0,0, 0.5) 0px 4px 6px -2px',
         },
       }}
     >
@@ -221,7 +222,7 @@ function App() {
             <UTCDatetime />
             <Link
               underline="none"
-              sx={{ display: 'flex' }}
+              sx={{ display: 'flex', cursor: 'pointer' }}
               onClick={fetchWeatherByLocation}
             >
               <MyLocation
